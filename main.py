@@ -28,6 +28,13 @@ name_input_active = False
 MAX_NAME_LEN = 16
 name_font = pygame.font.Font(None, 58)
 NAME_TEXT_POS = (295, 408)
+ROOMS = {
+    "living_room": pygame.Rect(0, 400, 1428, 336),
+    "hall": pygame.Rect(0, 0, 714, 400),
+    "kitchen": pygame.Rect(714, 0, 714, 400),
+}
+TRANSITION_TIME_MS = 1500 # столько мс персонажи переходят между комнатами
+INTERACT_RANGE_PX = 10 # погрешность от мебели для взаимодействия
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 IMAGES_DIR = os.path.join(BASE_DIR, "resources", "images")
@@ -133,6 +140,7 @@ def open_name_popup():
 def confirm_name_and_start_level():
     global current_screen, camera_x, camera_y, show_name_popup, name_input_active
     current_screen = "gameplay"
+    init_level()
     camera_x = 500
     camera_y = 100
     show_name_popup = False
@@ -145,6 +153,31 @@ def reset_buttons():
     for btn in buttons:
         btn.is_pressed = False
     level1_btn.is_selected = False
+
+
+# Создание уровня
+def init_level():
+    global player, enemy, furniture_list, door_list, held_item
+
+    player = Player(x=200, y=520, room="living_room")
+    enemy_patrol = [(100, 120), (620, 120)]
+    enemy = Enemy(x=100, y=120, room="hall", patrol_points=enemy_patrol)
+
+    furniture_list = [
+        Furniture("cabinet", x=150, y=520, room="living_room", items_inside=[Item("glue")]),
+        Furniture("fridge", x=850, y=120, room="kitchen", items_inside=[Item("egg")]),
+        Furniture("microwave", x=950, y=120, room="kitchen", items_inside=[]),
+        Furniture("binoculars", x=620, y=120, room="hall", items_inside=[]),
+    ]
+
+    door_list = [
+        Door(x=700, y=380, room_from="hall", to_room="living_room"),
+        Door(x=720, y=380, room_from="kitchen", to_room="living_room"),
+        Door(x=700, y=380, room_from="living_room", to_room="hall"),
+        Door(x=720, y=380, room_from="living_room", to_room="kitchen"),
+    ]
+
+    held_item = None
 
 # Класс кнопок
 
@@ -183,6 +216,62 @@ class ImageButton:
                 except Exception as e:
                     print(f"Ошибка при выполнении действия кнопки: {e}")
             self.is_pressed = False
+
+class Item:
+    def __init__(self, type_name, image=None):
+        self.name = type_name
+        self.image = image
+
+class Furniture:
+    def __init__(self, name, x, y, room, items_inside=None):
+        self.name = name
+        self.x = x
+        self.y = y
+        self.room = room
+        self.items_inside = items_inside or []
+        self.rect = pygame.Rect(x, y, 50, 50)
+
+    def can_interact(self, player_x, player_room):
+        return player_room == self.room and abs(player_x - self.x) <= INTERACT_RANGE_PX
+    
+    def take_item(self):
+        if self.items_inside:
+            return self.items_inside.pop()
+        else:
+            return None
+    def apply_item(self, item):
+        return False
+    
+class Door:
+    def __init__(self, x, y, room_from, to_room):
+        self.x = x
+        self.y = y
+        self.from_room = room_from
+        self.to_room = to_room
+        self.rect = pygame.Rect(x-16, y-32, 32, 64)
+    def can_enter(self, player_x, player_room):
+        return player_room == self.from_room and abs(player_x - self.x) <= INTERACT_RANGE_PX
+
+class Player:
+    def __init__(self, x, y, room):
+        self.x = x
+        self.y = y
+        self.room = room
+        self.state = "idle"
+        self.inventory = []
+        self.sabotage_count = 0
+    def screen_pos(self, cam_x, cam_y):
+        return int(self.x - cam_x), int(self.y - cam_y)
+
+class Enemy:
+    def __init__(self, x, y, room, patrol_points):
+        self.x = x
+        self.y = y
+        self.room = room
+        self.patrol = patrol_points[:]  # список (x,y) точек
+        self.patrol_i = 0
+        self.state = "patrol"  # patrol, transition, ghost, inspecting
+        self.ghost = False
 
 start_btn = ImageButton("startgamebtn", WIDTH // 2, 400, start_game)
 exit_btn = ImageButton("exitgamebtn", WIDTH // 2, 480, exit_game)
