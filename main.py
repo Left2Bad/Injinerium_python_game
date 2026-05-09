@@ -241,14 +241,51 @@ class Furniture:
             return None
     def apply_item(self, item):
         return False
-    
+
+class Anim:
+    def __init__(self, frames, duration_ms, loop=True):
+        self.frames = frames
+        self.duration_ms = max(1, duration_ms)
+        self.loop = loop
+        self.time_ms = 0
+
+    def update(self, dt_ms):
+        self.time_ms += dt_ms
+        if self.loop:
+            self.time_ms %= self.duration_ms
+        else:
+            if self.time_ms > self.duration_ms:
+                self.time_ms = self.duration_ms
+
+    def get_frame(self):
+        if not self.frames:
+            return None
+        idx = int(self.time_ms / self.duration_ms * len(self.frames))
+        if idx >= len(self.frames):
+            idx = len(self.frames) - 1
+        return self.frames[idx]
+
 class Door:
-    def __init__(self, x, y, room_from, to_room):
+    def __init__(self, x, y, room_from, to_room, frames_idle=None, frames_open=None, anim_ms=1200):
         self.x = x
         self.y = y
         self.from_room = room_from
         self.to_room = to_room
         self.rect = pygame.Rect(x-16, y-32, 32, 64)
+        self.anim_idle = Anim(frames_idle, anim_ms, loop=True)
+        self.anim_open = Anim(frames_open, anim_ms, loop=False)
+        self.state = "idle"
+    
+    def update_anim(self, dt_ms):
+        if self.state =="open":
+            self.anim_open.update(dt_ms)
+        else:
+            self.anim_idle.update(dt_ms)
+    def get_frame(self):
+        if self.state == "open":
+            return self.anim_open.get_frame()
+        else:
+            return self.anim_idle.get_frame()
     def can_enter(self, player_x, player_room):
         return player_room == self.from_room and abs(player_x - self.x) <= INTERACT_RANGE_PX
 
@@ -285,6 +322,7 @@ start_level_btn = ImageButton("levelmenustartbtn", WIDTH - 53, HEIGHT - 43, open
 ingame_exit_btn = ImageButton("ingameexitbtn", WIDTH - 34, HEIGHT - 91, level_menu_exit)
 
 while running:
+    dt_ms = clock.get_time()
     if current_screen == "gameplay" and timer_start_ms is None:
         timer_start_ms = pygame.time.get_ticks()
         timer_elapsed_ms = 0
@@ -354,6 +392,8 @@ while running:
         draw_level_menu()
     elif current_screen == "gameplay":
         draw_gameplay()
+        for door in door_list:
+            door.update_anim(dt_ms)
     pygame.display.flip()
     clock.tick(60)
 
