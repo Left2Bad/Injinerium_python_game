@@ -42,7 +42,7 @@ def load_frames_range(prefix, start, end, pad=4):
     return frames
 
 
-# Leaderboard DB helper
+# Класс для работы с таблицей лидеров
 class LeaderboardDB:
     def __init__(self, path):
         self.path = path
@@ -71,26 +71,26 @@ class LeaderboardDB:
             conn.close()
 
     def add_result(self, name, score, time_ms):
-        # Keep only top-N results. If new result is good enough, replace the worst of top-N.
+        # Сохранять топ-N результатов. Если новый результат достаточно хорош, заменить худший из топ-N.
         limit = 5
         conn = self._connect()
         try:
             cur = conn.cursor()
-            # find number of rows
+            # найти количество записей
             cur.execute("SELECT COUNT(*) FROM leaderboard")
             total = cur.fetchone()[0]
             if total < limit:
                 cur.execute("INSERT INTO leaderboard (name, score, time_ms) VALUES (?, ?, ?)", (name, int(score), int(time_ms)))
                 conn.commit()
                 return True
-            # get the worst entry among the top 'limit' (ordered best->worst)
+            # найти худший результат среди топ-'limit' (отсортированный по возрастанию от лучшего к худшему)
             cur.execute("SELECT id, score, time_ms FROM leaderboard ORDER BY score DESC, time_ms ASC LIMIT 1 OFFSET ?", (limit-1,))
             row = cur.fetchone()
             if not row:
                 return False
             worst_id, worst_score, worst_time = row
-            # If new result is better than worst, or equal (tie) — replace worst
-            # Better means higher score, or same score and lower or equal time
+            # Если новый результат лучше худшего, или такой же (ничья) — заменить худший
+            # Лучше означает более высокий результат, или такой же результат и меньшее или равное время
             if (int(score) > int(worst_score)) or (int(score) == int(worst_score) and int(time_ms) <= int(worst_time)):
                 cur.execute("DELETE FROM leaderboard WHERE id = ?", (worst_id,))
                 cur.execute("INSERT INTO leaderboard (name, score, time_ms) VALUES (?, ?, ?)", (name, int(score), int(time_ms)))
@@ -109,7 +109,7 @@ class LeaderboardDB:
         finally:
             conn.close()
 
-# instantiate DB
+# Создать БД
 leaderboard_db = LeaderboardDB(os.path.join(BASE_DIR, "leaderboard.sqlite3"))
 
 # Функции отрисовки разных экранов
@@ -150,12 +150,12 @@ def draw_leaderboard():
     bg = get_image(LEADERBOARD_BG_NAME)
     if bg:
         screen.blit(bg, (0, 0))
-    # draw back arrow
+    # Вывести стрелку назад
     try:
         arrow_back_btn.draw(screen)
     except Exception:
         pass
-    # draw top results
+    # Вывести таблицу лидеров
     lines = leaderboard_db.top_results(5)
     x, y = LEADERBOARD_TEXT_POS
     header = leaderboard_font.render("Top 5", True, (0, 0, 0))
