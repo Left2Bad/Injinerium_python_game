@@ -29,6 +29,7 @@ player_name = ""
 show_name_popup = False
 name_input_active = False
 selected_item_index = None
+binoculars_obj = None
 MAX_NAME_LEN = 16
 name_font = pygame.font.Font(None, 58)
 NAME_TEXT_POS = (295, 408)
@@ -38,7 +39,7 @@ ROOMS = {
     "kitchen": pygame.Rect(714, 0, 714, 400),
 }
 TRANSITION_TIME_MS = 1500 # столько мс персонажи переходят между комнатами
-INTERACT_RANGE_PX = 10 # погрешность от мебели для взаимодействия
+INTERACT_RANGE_PX = 30 # погрешность от мебели для взаимодействия
 INVENTORY_START_X = 180
 INVENTORY_START_Y = 536
 INVENTORY_ITEM_SPACING = 80
@@ -64,13 +65,31 @@ MICROWAVE_IDLE_NAME = "microwawe"
 MICROWAVE_DIRTY_NAME = "microwawe_dirty"
 BINOCULARS_IDLE_NAME = "binoculars_ms"
 BINOCULARS_GLUED_NAME = "binoculars_glue_ms"
-ARK_IDLE_NAME = "ark"
-ARK_OPEN_NAME = "ark_opened"
-ARK_FRAME_MS = 500
-GLUE_ICON_NORM = "I_superglue_norm"
-GLUE_ICON_SELECTED = "I_superglue_pres"
-PLAYER_SPEED = 2
-PLAYER_WALK_FRAME_MS = 160
+HALL_DOOR_POS = (830, 160)
+KITCHEN_DOOR_POS = (846, 160)
+HALL_DOOR_IDLE_NAME = "door_left_idle"
+KITCHEN_DOOR_IDLE_NAME = "door_right_idle"
+HALL_DOOR_EXIT_PREFIX = "N_enter_"
+KITCHEN_DOOR_ENTER_PREFIX = "N_enterr_"
+ENEMY_SPEED = 12
+ENEMY_HALL_POINT_X = 200
+ENEMY_KITCHEN_POINT_X = 1180
+ENEMY_HALL_Y = 280
+ENEMY_KITCHEN_Y = 280
+ENEMY_DOOR_RANGE_PX = 10
+ENEMY_WALK_RIGHT_PREFIX = "N_mg1_000"
+ENEMY_WALK_LEFT_PREFIX = "N_mg3_000"
+ENEMY_WALK_FRAMES = 8
+ENEMY_WALK_FRAME_MS = 200
+ENEMY_IDLE_RIGHT_NAME = "N_ms1_0004"
+ENEMY_IDLE_LEFT_NAME = "N_ms3_0008"
+ENEMY_PEEP_PREFIX = "N_peep_"
+ENEMY_PEEP_FRAMES = 31
+ENEMY_PEEP_FRAME_MS = 150
+ENEMY_PEEP_GLUED_PREFIX = ""
+ENEMY_BINOCULARS_OFFSET_X = 40
+PLAYER_SPEED = 16
+PLAYER_WALK_FRAME_MS = 100
 PLAYER_WALK_FRAMES = 7
 PLAYER_WALK_LEFT_PREFIX = "W_mg3_000"
 PLAYER_WALK_RIGHT_PREFIX = "W_mg1_000" # да, спрайты так называются, не я придумывал
@@ -165,7 +184,7 @@ def draw_gameplay():
     if "furniture_list" in globals():
         for furniture in furniture_list:
             furniture.draw(screen, camera_x, camera_y)
-    if "enemy" in globals():
+    if "enemy" in globals() and not enemy.ghost:
         enemy.draw(screen, camera_x, camera_y)
     if "player" in globals() and not player.ghost:
         player.draw(screen, camera_x, camera_y)
@@ -275,8 +294,10 @@ def handle_inventory_click(pos):
 # Создание уровня
 def init_level():
     global player, enemy, furniture_list, door_list, held_item, door_top, door_bottom
+    global door_left, door_right
     global selected_item_index
     global door_transition_active, door_from, door_to
+    global binoculars_obj
 
     door_transition_active = False
     door_from = None
@@ -297,12 +318,48 @@ def init_level():
         walk_frame_ms=PLAYER_WALK_FRAME_MS,
         speed=PLAYER_SPEED,
     )
-    enemy_patrol = [(100, 120), (620, 120)]
-    enemy = Enemy(x=100, y=120, room="hall", patrol_points=enemy_patrol)
+    enemy_walk_left = load_frames(ENEMY_WALK_LEFT_PREFIX, ENEMY_WALK_FRAMES)
+    enemy_walk_right = load_frames(ENEMY_WALK_RIGHT_PREFIX, ENEMY_WALK_FRAMES)
+    enemy_idle_left = get_image(ENEMY_IDLE_LEFT_NAME)
+    enemy_idle_right = get_image(ENEMY_IDLE_RIGHT_NAME)
+    enemy_peep_frames = load_frames_range(ENEMY_PEEP_PREFIX, 0, ENEMY_PEEP_FRAMES - 1)
+    if ENEMY_PEEP_GLUED_PREFIX:
+        enemy_peep_glued = load_frames_range(ENEMY_PEEP_GLUED_PREFIX, 0, ENEMY_PEEP_FRAMES - 1)
+    else:
+        enemy_peep_glued = []
+
+    enemy_patrol = [(ENEMY_HALL_POINT_X, ENEMY_HALL_Y), (ENEMY_KITCHEN_POINT_X, ENEMY_KITCHEN_Y)]
+    enemy = Enemy(
+        x=ENEMY_HALL_POINT_X,
+        y=ENEMY_HALL_Y,
+        room="hall",
+        patrol_points=enemy_patrol,
+        frames_left=enemy_walk_left,
+        frames_right=enemy_walk_right,
+        idle_left=enemy_idle_left,
+        idle_right=enemy_idle_right,
+        walk_frame_ms=ENEMY_WALK_FRAME_MS,
+        peep_frames=enemy_peep_frames,
+        peep_glued_frames=enemy_peep_glued,
+        peep_frame_ms=ENEMY_PEEP_FRAME_MS,
+        speed=ENEMY_SPEED,
+        hall_point_x=ENEMY_HALL_POINT_X,
+        kitchen_point_x=ENEMY_KITCHEN_POINT_X,
+        hall_y=ENEMY_HALL_Y,
+        kitchen_y=ENEMY_KITCHEN_Y,
+        door_range=ENEMY_DOOR_RANGE_PX,
+    )
 
     door_idle = get_image(DOOR_IDLE_NAME)
     door_leave_frames = load_frames_range(DOOR_LEAVE_PREFIX, 0, 8)
     door_enter_frames = load_frames_range(DOOR_ENTER_PREFIX, 14, 0)
+
+    hall_door_idle = get_image(HALL_DOOR_IDLE_NAME)
+    kitchen_door_idle = get_image(KITCHEN_DOOR_IDLE_NAME)
+    hall_exit_frames = load_frames_range(HALL_DOOR_EXIT_PREFIX, 1, 19)
+    hall_enter_frames = load_frames_range(HALL_DOOR_EXIT_PREFIX, 19, 1)
+    kitchen_enter_frames = load_frames_range(KITCHEN_DOOR_ENTER_PREFIX, 0, 17)
+    kitchen_exit_frames = load_frames_range(KITCHEN_DOOR_ENTER_PREFIX, 17, 0)
 
     egg_icon_norm = get_image(EGG_ICON_NORM)
     egg_icon_selected = get_image(EGG_ICON_SELECTED)
@@ -372,6 +429,12 @@ def init_level():
         ),
     ]
 
+    binoculars_obj = None
+    for furniture in furniture_list:
+        if furniture.name == "binoculars":
+            binoculars_obj = furniture
+            break
+
     door_top = Door(
         x=TOP_DOOR_POS[0],
         y=TOP_DOOR_POS[1],
@@ -394,7 +457,29 @@ def init_level():
         anim_ms=TRANSITION_TIME_MS,
         spawn_y=PLAYER_START_Y,
     )
-    door_list = [door_top, door_bottom]
+    door_left = Door(
+        x=HALL_DOOR_POS[0],
+        y=HALL_DOOR_POS[1],
+        room_from="hall",
+        to_room="kitchen",
+        frames_idle=[hall_door_idle] if hall_door_idle else [],
+        frames_leave=hall_exit_frames,
+        frames_enter=hall_enter_frames,
+        anim_ms=TRANSITION_TIME_MS,
+        anchor="topright",
+    )
+    door_right = Door(
+        x=KITCHEN_DOOR_POS[0],
+        y=KITCHEN_DOOR_POS[1],
+        room_from="kitchen",
+        to_room="hall",
+        frames_idle=[kitchen_door_idle] if kitchen_door_idle else [],
+        frames_leave=kitchen_exit_frames,
+        frames_enter=kitchen_enter_frames,
+        anim_ms=TRANSITION_TIME_MS,
+        anchor="topleft",
+    )
+    door_list = [door_top, door_bottom, door_left, door_right]
 
     held_item = None
     selected_item_index = None
@@ -463,10 +548,15 @@ class Furniture:
         self.pending_item = None
         self.alt_frame = alt_frame
         self.accept_item = accept_item
+        self.visible = True
 
     def can_interact(self, player_x, player_room):
         if player_room != self.room:
             return False
+        ref_x = self.get_ref_x()
+        return abs(player_x - ref_x) <= INTERACT_RANGE_PX
+
+    def get_ref_x(self):
         frame = self.get_frame()
         ref_x = self.x
         if frame:
@@ -474,7 +564,7 @@ class Furniture:
                 ref_x = self.x + frame.get_width() // 2
             elif self.anchor == "topright":
                 ref_x = self.x - frame.get_width() // 2
-        return abs(player_x - ref_x) <= INTERACT_RANGE_PX
+        return ref_x
     
     def take_item(self):
         if self.items_inside:
@@ -505,6 +595,8 @@ class Furniture:
         return self.anim_idle.get_frame()
 
     def draw(self, surface, cam_x, cam_y):
+        if not self.visible:
+            return
         frame = self.get_frame()
         if not frame:
             return
@@ -519,6 +611,8 @@ class Furniture:
         surface.blit(frame, rect.topleft)
 
     def get_screen_rect(self, cam_x, cam_y):
+        if not self.visible:
+            return pygame.Rect(0, 0, 0, 0)
         frame = self.get_frame()
         if frame:
             draw_x = self.x - cam_x
@@ -534,6 +628,8 @@ class Furniture:
         return rect
 
     def hit_test(self, pos, cam_x, cam_y):
+        if not self.visible:
+            return False
         return self.get_screen_rect(cam_x, cam_y).collidepoint(pos)
 
     def start_use(self):
@@ -620,6 +716,16 @@ class Door:
     def is_near(self, player_x, player_y):
         return abs(player_x - self.x) <= INTERACT_RANGE_PX
 
+    def get_ref_x(self):
+        frame = self.get_frame()
+        ref_x = self.x
+        if frame:
+            if self.anchor == "topleft":
+                ref_x = self.x + frame.get_width() // 2
+            elif self.anchor == "topright":
+                ref_x = self.x - frame.get_width() // 2
+        return ref_x
+
     def get_screen_rect(self, cam_x, cam_y):
         frame = self.get_frame()
         if frame:
@@ -700,13 +806,10 @@ class Player:
         left = keys[pygame.K_LEFT]
         right = keys[pygame.K_RIGHT]
 
-        dx = 0
         direction = None
         if left and not right:
-            dx = -self.speed
             direction = "left"
         elif right and not left:
-            dx = self.speed
             direction = "right"
 
         if direction and direction != self.facing:
@@ -717,16 +820,16 @@ class Player:
         self.moving = direction is not None
         if self.moving:
             self.walk_timer += dt_ms
-            if self.walk_timer >= self.walk_frame_ms:
-                self.walk_timer %= self.walk_frame_ms
+            while self.walk_timer >= self.walk_frame_ms:
+                self.walk_timer -= self.walk_frame_ms
                 frames = self.frames_left if self.facing == "left" else self.frames_right
                 if frames:
                     self.walk_index = (self.walk_index + 1) % len(frames)
+                step = -self.speed if self.facing == "left" else self.speed
+                self.x += step
         else:
             self.walk_index = 0
             self.walk_timer = 0
-
-        self.x += dx
 
     def get_frame(self):
         if not self.moving:
@@ -757,22 +860,196 @@ class Player:
         surface.blit(frame, rect.topleft)
 
 class Enemy:
-    def __init__(self, x, y, room, patrol_points, frames_idle=None, anim_ms=800, anchor="center"):
+    def __init__(
+        self,
+        x,
+        y,
+        room,
+        patrol_points,
+        frames_left=None,
+        frames_right=None,
+        idle_left=None,
+        idle_right=None,
+        walk_frame_ms=160,
+        peep_frames=None,
+        peep_glued_frames=None,
+        peep_frame_ms=80,
+        anchor="center",
+        speed=2,
+        hall_point_x=0,
+        kitchen_point_x=0,
+        hall_y=0,
+        kitchen_y=0,
+        door_range=10,
+    ):
         self.x = x
         self.y = y
         self.room = room
         self.patrol = patrol_points[:]  # список (x,y) точек
         self.patrol_i = 0
-        self.state = "patrol"  # patrol, transition, ghost, inspecting
+        self.state = "patrol"
         self.ghost = False
-        self.anim_idle = Anim(frames_idle or [], anim_ms, loop=True)
         self.anchor = anchor
+        self.speed = speed
+        self.hall_point_x = hall_point_x
+        self.kitchen_point_x = kitchen_point_x
+        self.hall_y = hall_y
+        self.kitchen_y = kitchen_y
+        self.door_range = door_range
+        self.phase = "to_point"
+        self.transition_from = None
+        self.transition_to = None
+        self.next_room = None
+        self.frames_left = frames_left or []
+        self.frames_right = frames_right or []
+        self.idle_left = idle_left
+        self.idle_right = idle_right
+        self.walk_frame_ms = max(1, walk_frame_ms)
+        self.walk_timer = 0
+        self.walk_index = 0
+        self.facing = "right"
+        self.moving = False
+        self.peep_frames = peep_frames or []
+        self.peep_glued_frames = peep_glued_frames or []
+        self.peep_frame_ms = max(1, peep_frame_ms)
+        self.peep_timer = 0
+        self.peep_index = 0
+        self.peep_use_glued = False
 
-    def update_anim(self, dt_ms):
-        self.anim_idle.update(dt_ms)
+    def update(self, dt_ms, door_left, door_right, binoculars):
+        if self.ghost:
+            self.moving = False
+            if self.transition_from and self.transition_to:
+                if self.transition_from.is_done() and self.transition_to.is_done():
+                    self.transition_from.set_idle()
+                    self.transition_to.set_idle()
+                    self.room = self.transition_to.from_room
+                    self.x = self.transition_to.get_ref_x()
+                    self.y = self.hall_y if self.room == "hall" else self.kitchen_y
+                    self.ghost = False
+                    self.transition_from = None
+                    self.transition_to = None
+                    self.phase = "to_point"
+            return
+
+        if self.phase == "peep":
+            self.update_peep(dt_ms, binoculars)
+            return
+
+        target_y = self.hall_y if self.room == "hall" else self.kitchen_y
+        if self.room == "kitchen" and binoculars:
+            target_x = binoculars.get_ref_x() - ENEMY_BINOCULARS_OFFSET_X
+            target_x = max(target_x, ROOMS["kitchen"].x)
+        else:
+            if self.room == "hall":
+                target_x = min(self.hall_point_x, ROOMS["hall"].right - 1)
+            else:
+                target_x = max(self.kitchen_point_x, ROOMS["kitchen"].x)
+
+        if self.phase == "to_point":
+            if self.move_towards(target_x, target_y, dt_ms):
+                if self.room == "kitchen" and binoculars:
+                    self.start_peep(binoculars)
+                else:
+                    self.phase = "to_door"
+            return
+
+        if self.phase == "to_door":
+            door = door_left if self.room == "hall" else door_right
+            if door:
+                door_target_x = door.get_ref_x()
+                self.move_towards(door_target_x, target_y, dt_ms)
+                if abs(self.x - door_target_x) <= self.door_range:
+                    self.start_transition(door_left, door_right)
+
+    def move_towards(self, target_x, target_y, dt_ms):
+        self.facing = "right" if self.x < target_x else "left"
+        self.moving = True
+        self.walk_timer += dt_ms
+        moved = False
+        while self.walk_timer >= self.walk_frame_ms:
+            self.walk_timer -= self.walk_frame_ms
+            frames = self.frames_left if self.facing == "left" else self.frames_right
+            if frames:
+                self.walk_index = (self.walk_index + 1) % len(frames)
+            step = -self.speed if self.facing == "left" else self.speed
+            if abs(self.x - target_x) <= abs(step):
+                self.x = target_x
+                self.y = target_y
+                self.moving = False
+                self.walk_timer = 0
+                self.walk_index = 0
+                return True
+            self.x += step
+            moved = True
+        if moved:
+            self.y = target_y
+        return self.x == target_x
+
+    def start_peep(self, binoculars):
+        self.phase = "peep"
+        self.peep_timer = 0
+        self.peep_index = 0
+        self.peep_use_glued = bool(binoculars and binoculars.state == "alt")
+        self.moving = False
+        if binoculars:
+            binoculars.visible = False
+
+    def update_peep(self, dt_ms, binoculars):
+        frames = self.get_peep_frames()
+        if not frames:
+            self.finish_peep(binoculars)
+            return
+        self.peep_timer += dt_ms
+        if self.peep_timer >= self.peep_frame_ms:
+            self.peep_timer %= self.peep_frame_ms
+            self.peep_index += 1
+            if self.peep_index >= len(frames):
+                self.finish_peep(binoculars)
+
+    def finish_peep(self, binoculars):
+        self.peep_timer = 0
+        self.peep_index = 0
+        self.phase = "to_door"
+        if binoculars:
+            binoculars.visible = True
+
+    def get_peep_frames(self):
+        if self.peep_use_glued and self.peep_glued_frames:
+            return self.peep_glued_frames
+        return self.peep_frames
+
+    def start_transition(self, door_left, door_right):
+        if self.room == "hall":
+            self.transition_from = door_left
+            self.transition_to = door_right
+            self.next_room = "kitchen"
+        else:
+            self.transition_from = door_right
+            self.transition_to = door_left
+            self.next_room = "hall"
+        if self.transition_from and self.transition_to:
+            self.transition_from.play_enter()
+            self.transition_to.play_leave()
+            self.ghost = True
+            self.phase = "to_point"
 
     def get_frame(self):
-        return self.anim_idle.get_frame()
+        if self.phase == "peep":
+            frames = self.get_peep_frames()
+            if frames:
+                idx = min(self.peep_index, len(frames) - 1)
+                return frames[idx]
+        if self.moving:
+            frames = self.frames_left if self.facing == "left" else self.frames_right
+            if frames:
+                idx = min(self.walk_index, len(frames) - 1)
+                return frames[idx]
+        if self.facing == "left" and self.idle_left:
+            return self.idle_left
+        if self.facing == "right" and self.idle_right:
+            return self.idle_right
+        return None
 
     def draw(self, surface, cam_x, cam_y):
         frame = self.get_frame()
@@ -901,8 +1178,8 @@ while running:
         if "player" in globals() and not door_transition_active:
             keys = pygame.key.get_pressed()
             player.update_walk(keys, dt_ms)
-        if "enemy" in globals():
-            enemy.update_anim(dt_ms)
+        if "enemy" in globals() and "door_left" in globals() and "door_right" in globals():
+            enemy.update(dt_ms, door_left, door_right, binoculars_obj)
         if door_transition_active and door_from and door_to:
             if door_from.is_done() and door_to.is_done():
                 player.x = door_to.x
